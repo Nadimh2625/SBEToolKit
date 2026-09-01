@@ -1,8 +1,8 @@
 # SwitchbackExpToolkit
 
-Rider-level A/B tests in a two-sided market estimate the wrong thing. Treated units steal scarce supply from control (or spill extra supply onto them), so the contrast is not the effect of launching the policy. **Time-region switchbacks** put the whole local market on one policy at a time and recover the global ATE.
+A 5% test analyzed at the ride level rejects a true-zero marketplace experiment **35% of the time**. That is what happens when you port ordinary product A/B tooling into a two-sided market: you randomized 500 time-region blocks and the SE pretends you have 41,000 independent rides. Cluster at the block and the same test rejects 4.7%. The point estimate is wrong for the same reason. Treated units steal scarce supply from control, so a naive rider split shows an 11pp match-rate win when launching the policy moves total matches by half a point. **Time-region switchbacks** with block-level SEs recover the global ATE and the nominal Type I rate.
 
-This library is the stack you actually need to run that experiment: power, randomization, CUPED, alpha spending, and an interference diagnostic with a simulated marketplace whose true effect is known.
+This library is the stack for that experiment: power, randomization, CUPED, alpha spending, and an interference diagnostic with a simulated marketplace whose true effect is known.
 
 ## The chart
 
@@ -34,7 +34,7 @@ Each run randomizes **500** time-region blocks and records ~**41,000** rides. If
 | Cluster-robust SE at the block | 500 blocks | **4.7%** |
 | Difference in means on blocks | 500 blocks | **4.6%** |
 
-35% false positives is the usual AI-stats bug: analyze at the individual-ride level after you randomized at the block. Cluster at the randomization unit, or aggregate to one row per block. Both land on the nominal 5%.
+35% false positives is the usual mistake when experimentation tooling is ported from a normal product context to a marketplace: you analyze at the individual-ride level after you randomized at the block. Cluster at the randomization unit, or aggregate to one row per block. Both land on the nominal 5%.
 
 ```bash
 python -m sbetoolkit.cli --mode null --reps 1000 --seed 11
