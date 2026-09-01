@@ -172,8 +172,16 @@ class MarketplaceSimulator:
         design: str = "balanced",
         washout: int = 0,
         switch_every: int = 1,
+        return_riders: bool = False,
     ) -> dict:
-        """Cell-level switchback: one policy per (region, period)."""
+        """Cell-level switchback: one policy per (region, period).
+
+        ``ate`` / ``se`` are the *block-level* difference in means (one
+        row per randomized cell). Set ``return_riders=True`` to also get
+        ride-level arrays for the iid-vs-cluster Type I check.
+        """
+        from sbetoolkit.inference import block_ate
+
         cfg = self.config
         rng = np.random.default_rng(cfg.seed if seed is None else seed)
         regions = [f"r{i}" for i in range(cfg.n_regions)]
@@ -190,18 +198,24 @@ class MarketplaceSimulator:
         n_cells = len(table)
         riders, drivers = self._cell_sizes(rng, n_cells)
         intercepts = rng.normal(0.0, cfg.cell_intercept_sd, size=n_cells)
+        treat_col = table["treatment"].to_numpy()
+        wash_col = table["is_washout"].to_numpy()
 
         outcomes = []
-        for i, row in table.iterrows():
+        rider_y: list[np.ndarray] = []
+        rider_t: list[np.ndarray] = []
+        rider_block: list[np.ndarray] = []
+        rider_keep: list[np.ndarray] = []
+
+        for i in range(n_cells):
             n_r = int(riders[i])
             n_d = int(drivers[i])
-            treat = int(row["treatment"])
+            treat = int(treat_col[i])
             treated = np.full(n_r, bool(treat))
             extra = cfg.extra_drivers_if_treated if treat else 0
             y = _match(treated, n_d + extra, cfg.p_request_control, cfg.p_request_treat, rng)
             b = intercepts[i]
-            y_obs = float(np.clip(y.mean() + b, 0, 1))
-            # Pre-experiment covariate: untreated-world cell rate + noise.
+            y_obs = np.clip(y + b, 0, 1)
             x = float(
                 np.clip(
                     cfg.p_request_control * min(1.0, n_d / max(n_r * cfg.p_request_control, 1e-9))
@@ -213,26 +227,41 @@ class MarketplaceSimulator:
             )
             outcomes.append(
                 {
-                    **row.to_dict(),
+                    "region": table["region"].iloc[i],
+                    "period": table["period"].iloc[i],
+                    "treatment": treat,
+                    "is_washout": bool(wash_col[i]),
                     "n_riders": n_r,
                     "n_drivers": n_d + extra,
-                    "match_rate": y_obs,
+                    "match_rate": float(y_obs.mean()),
                     "pre_match_rate": x,
+                    "block_id": i,
                 }
             )
+            if return_riders:
+                rider_y.append(y_obs)
+                rider_t.append(np.full(n_r, treat, dtype=int))
+                rider_block.append(np.full(n_r, i, dtype=int))
+                rider_keep.append(np.full(n_r, not bool(wash_col[i]), dtype=bool))
+
         frame = pd.DataFrame(outcomes)
         analysis = frame.loc[~frame["is_washout"]]
-        yt = analysis.loc[analysis["treatment"] == 1, "match_rate"].to_numpy()
-        yc = analysis.loc[analysis["treatment"] == 0, "match_rate"].to_numpy()
-        ate = float(yt.mean() - yc.mean())
-        se = float(np.sqrt(yt.var(ddof=1) / yt.size + yc.var(ddof=1) / yc.size))
-        return {
-            "ate": ate,
-            "se": se,
+        est = block_ate(analysis["match_rate"].to_numpy(), analysis["treatment"].to_numpy())
+        out: dict = {
+            "ate": est.ate,
+            "se": est.se,
+            "pvalue": est.pvalue,
+            "estimate": est,
             "assignment": assignment,
             "blocks": frame,
             "analysis": analysis,
         }
+        if return_riders:
+            keep = np.concatenate(rider_keep)
+            out["rider_y"] = np.concatenate(rider_y)[keep]
+            out["rider_treatment"] = np.concatenate(rider_t)[keep]
+            out["rider_block"] = np.concatenate(rider_block)[keep]
+        return out
 
     def compare_estimators(self, n_reps: int = 64, seed: int = 1) -> pd.DataFrame:
         """Paired Monte Carlo of naive A/B vs switchback vs ground truth.
