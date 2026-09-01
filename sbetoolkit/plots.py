@@ -88,3 +88,48 @@ def plot_naive_vs_switchback(
         path.parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(path, dpi=160)
     return fig
+
+
+def plot_type_i(
+    result,
+    *,
+    path: str | Path | None = None,
+) -> plt.Figure:
+    """Bar chart: null reject rates vs nominal α."""
+    fig, ax = plt.subplots(figsize=(8.6, 5.2))
+    labels = [
+        "Iid SE\nat ride level",
+        "Cluster-robust SE\nat block",
+        "Difference in means\non blocks",
+    ]
+    rates = [result.iid_rate, result.cluster_rate, result.block_rate]
+    colors = ["#c0392b", "#1a5276", "#2471a3"]
+    bars = ax.bar(np.arange(3), rates, color=colors, width=0.62, zorder=2)
+    ax.axhline(result.alpha, color="#1e8449", lw=2.2, ls="--", zorder=3, label=f"Nominal α = {result.alpha:.2f}")
+    ax.set_xticks(np.arange(3))
+    ax.set_xticklabels(labels)
+    ax.set_ylim(0, max(0.22, max(rates) * 1.25))
+    ax.set_ylabel("False-positive rate (true effect = 0)")
+    ax.set_title(
+        f"Null check: {result.n_reps} switchbacks, "
+        f"{result.n_blocks} blocks, ~{result.n_rides_per_rep:,.0f} rides"
+    )
+    for bar, rate in zip(bars, rates):
+        ax.text(
+            bar.get_x() + bar.get_width() / 2,
+            bar.get_height() + 0.006,
+            f"{100 * rate:.1f}%",
+            ha="center",
+            va="bottom",
+            fontsize=12,
+            fontweight="bold",
+        )
+    ax.legend(frameon=False, loc="upper right")
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    fig.tight_layout()
+    if path is not None:
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(path, dpi=160)
+    return fig

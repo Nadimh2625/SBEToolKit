@@ -1,21 +1,16 @@
-"""CLI: regenerate the README figure from the marketplace simulator."""
+"""CLI: README figures — bias chart or null Type I calibration."""
 
 from __future__ import annotations
 
 import argparse
 from pathlib import Path
 
+from sbetoolkit.calibration import type_i_null_check
 from sbetoolkit.marketplace import MarketplaceConfig, MarketplaceSimulator
-from sbetoolkit.plots import plot_naive_vs_switchback
+from sbetoolkit.plots import plot_naive_vs_switchback, plot_type_i
 
 
-def main(argv: list[str] | None = None) -> int:
-    p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--out", default="docs/naive_vs_switchback.png")
-    p.add_argument("--reps", type=int, default=80)
-    p.add_argument("--seed", type=int, default=7)
-    args = p.parse_args(argv)
-
+def _chart(args: argparse.Namespace) -> int:
     sim = MarketplaceSimulator(
         MarketplaceConfig(
             n_regions=8,
@@ -33,6 +28,42 @@ def main(argv: list[str] | None = None) -> int:
     print(f"wrote {out}")
     print(comparison[["naive_ate", "switchback_ate", "truth_ate"]].agg(["mean", "std"]).to_string())
     return 0
+
+
+def _null(args: argparse.Namespace) -> int:
+    result = type_i_null_check(n_reps=args.reps, seed=args.seed, alpha=args.alpha)
+    out = Path(args.out)
+    plot_type_i(result, path=out)
+    summary = result.summary()
+    csv_path = out.with_suffix(".csv")
+    summary.to_csv(csv_path, index=False)
+    print(f"wrote {out}")
+    print(f"wrote {csv_path}")
+    print(summary.to_string(index=False))
+    print(
+        f"n_blocks={result.n_blocks}  "
+        f"mean_rides={result.n_rides_per_rep:.0f}  "
+        f"n_reps={result.n_reps}"
+    )
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("--mode", choices=["chart", "null"], default="chart")
+    p.add_argument("--out", default=None)
+    p.add_argument("--reps", type=int, default=None)
+    p.add_argument("--seed", type=int, default=7)
+    p.add_argument("--alpha", type=float, default=0.05)
+    args = p.parse_args(argv)
+    if args.mode == "chart":
+        args.out = args.out or "docs/naive_vs_switchback.png"
+        args.reps = 80 if args.reps is None else args.reps
+        return _chart(args)
+    args.out = args.out or "docs/type_i_null.png"
+    args.reps = 1000 if args.reps is None else args.reps
+    args.seed = 11 if args.seed == 7 else args.seed
+    return _null(args)
 
 
 if __name__ == "__main__":

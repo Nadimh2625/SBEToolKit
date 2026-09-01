@@ -1,0 +1,4 @@
+estimator,randomization_unit,mean_n_used_in_se,reject_rate,nominal_alpha
+iid at ride level (wrong),ride,40997.211,0.351,0.05
+cluster-robust at block (right),block,500.0,0.047,0.05
+difference in means on blocks (right),block,500.0,0.046,0.05

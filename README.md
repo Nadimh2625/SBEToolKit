@@ -20,12 +20,43 @@ Naive A/B is precise and wrong: treated riders crowd out control riders for the 
 
 That is the whole interview. The rest of the README is how to compute it.
 
+## Proof the test is calibrated (true effect = 0)
+
+A thousand independent switchbacks of a **null** policy: treated and control riders request at the same rate, no extra drivers. There is nothing to detect. A 5% test should light up about fifty times.
+
+Each run randomizes **500** time-region blocks and records ~**41,000** rides. If you feed the rides to an iid t-test, the SE thinks those are 41,000 independent experiments. They are not. Treatment was assigned to the block.
+
+![Null Type I calibration](docs/type_i_null.png)
+
+| Estimator | n used in the SE | Reject H₀ (α = 0.05) |
+| --- | ---: | ---: |
+| iid SE at ride level | 40,997 rides | **35.1%** |
+| Cluster-robust SE at the block | 500 blocks | **4.7%** |
+| Difference in means on blocks | 500 blocks | **4.6%** |
+
+35% false positives is the usual AI-stats bug: analyze at the individual-ride level after you randomized at the block. Cluster at the randomization unit, or aggregate to one row per block. Both land on the nominal 5%.
+
+```bash
+python -m sbetoolkit.cli --mode null --reps 1000 --seed 11
+```
+
+```python
+from sbetoolkit import type_i_null_check
+
+result = type_i_null_check(n_reps=1000, seed=11)
+print(result.summary())
+# iid 35.1%   cluster 4.7%   block 4.6%
+```
+
+Raw rates: `docs/type_i_null.csv`.
+
 ## Install
 
 ```bash
 pip install -e ".[dev]"
 python -m pytest
-python -m sbetoolkit.cli --out docs/naive_vs_switchback.png
+python -m sbetoolkit.cli --mode chart --out docs/naive_vs_switchback.png
+python -m sbetoolkit.cli --mode null --reps 1000 --seed 11 --out docs/type_i_null.png
 ```
 
 ## Marketplace interference
