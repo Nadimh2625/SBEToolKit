@@ -2,17 +2,55 @@
 
 Normal A/B testing breaks in a rideshare or delivery marketplace, and this library is the set of tools that makes testing work there instead.
 
-The problem, in plain terms is if you're testing a functionality such as button color on a shopping site, each user is basically in their own bubble. What happens to one person doesn't change what happens to anyone else. So you can split users in half, compare and be done.
+The core idea, no jargon
 
-A ridesharing app isn't like that. There's a limited number of drivers on the road. If you give half the riders a discount and they start requesting more rides, they take drivers away from the other half. So the discount group looks great and the no-discount group looks worse, but you haven't created a single extra ride. You just moved rides from one group to the other.
+Say you run an online store and want to know if a green button beats a blue one. Easy. Show green to half your visitors, blue to the other half, see who buys more. This works because what one shopper does has nothing to do with what another shopper does. Everyone's in their own bubble.
 
-And essentially your test says "+11% wins!" so of course you launch it to everyone, and then you see total rides go up by half a percent. The test just simply measured who won a fight over a fixed pool, not whether the feature is worth shipping.
+Now say you work at a Rideshare platform and want to test a discount. Give it to half the riders. They start booking more.
 
-Also there is another issue about confidence; for example think of polling~ if you want to know what a city thinks, and you ask 500 different people, you will get 500 real opinions. If instead you ask 500 people but they're all sitting in the same room agreeing with each other, you don't have 500 opinions. You have a handful, repeated.
+But there are only so many drivers on the road tonight. Every ride a discount rider takes is a driver who isn't available for a non-discount rider. So the discount group gets more rides and the other group gets fewer. Your test shows a big win.
 
-That's your rides. All the rides in an area f.e Brooklyn at 3pm are stuck together, because they're all fighting over the same drivers that hour. If drivers are scarce that hour, everybody in that hour has a bad time together. So those rides aren't separate pieces of information. They're one hour's worth of information.
+Except no new rides were created. The rides just moved from one group to the other. It's like splitting a pizza: giving one person a bigger slice doesn't make more pizza.
 
-To prove our test is calibrated we run an experiment where the feature does absolutely nothing, a thousand times over. A properly calibrated test should falsely declare victory about 5% of the time. The ride-level version declares victory 35% of the time so we would be shipping fake wins in a third of your experiments and have no idea.
+You launch the discount to everyone expecting +11%. You get +0.5%. The test measured who won a fight over a fixed supply of drivers, not whether the discount actually grows the business.
+
+The second problem, which is sneakier
+
+Even setting aside the wrong number, the test is also far too confident about it.
+
+Imagine polling a city. Ask 500 different people and you've got 500 real opinions. Ask 500 people who are all in the same room agreeing with each other, and you've really only got a few opinions, repeated.
+
+Rides work the same way. Every ride in Brooklyn at 3pm is competing for the same drivers that hour. If drivers are scarce, everyone in that hour has a bad time together. Those rides aren't 82 separate pieces of evidence, they're one hour's worth.
+
+Standard tools don't know this. They count every ride as independent evidence, so they think they have 41,000 data points when they really have about 500. More data points make an answer look more certain, so the tool becomes wildly overconfident.
+
+The fix
+
+Stop splitting riders. Split time and place instead.
+
+Turn the feature on for all of Brooklyn from 2 to 3pm. Off from 3 to 4. On from 4 to 5. Do that across many neighborhoods and many hours. Now everyone in a given hour is under the same policy, so nobody's stealing drivers from a control group. This is called a switchback experiment.
+
+Then count your evidence in city-hours (500 of them), not rides (41,000).
+
+How this works
+
+This is the part that makes the project real rather than just plausible. A fake marketplace was built where the answers are known and we can check whether each method finds it.
+
+Four separate checks:
+
+Does it get the right number? Truth was +0.5%. The old method said +11%, off by twenty times. The new method said +0.5%, dead on.
+
+Does it stay quiet when nothing's happening? An experiment was ran where the feature did literally nothing, a thousand times. A good test should be fooled by random noise about 5 times in 100. The old method was fooled 35 times in 100. The new one, 4.7. So a third of the old method's "wins" would have been pure noise.
+
+Does it notice when something IS happening? The library predicted it would detect a real effect 80% of the time at a given size. It ran 500 times at that size. It detected 81%. Prediction and reality matched.
+
+Are the error bars honest? Every result comes with a range, like "+2%, give or take 1%." That range is supposed to contain the true answer 95% of the time. The new method: 96%. The old method: 0%. Not "rarely" — never, in 500 tries. Its range was tight and centered on the wrong number every single time.
+
+The honest tradeoff
+
+The new method is noisier. Any single experiment can be off by a couple of points in either direction, where the old method lands in the same spot every time. But it lands in the wrong spot every time.
+
+A fuzzy answer near the truth is useful. A sharp answer far from the truth is worse than useless, because the sharpness makes you believe it.
 
 This library is the toolkit for that setting. It turns a policy on and off for a whole city and time window at once ([switchback experiments](https://arxiv.org/abs/2009.00148)), plans how many of those windows you need, uses last week’s numbers to cut noise ([CUPED](https://doi.org/10.1145/2487575.2487651)), lets you peek at results without inflating false alarms ([alpha spending](https://doi.org/10.1093/biomet/70.3.659)), and checks the whole pipeline on a fake marketplace where the true effect is known. Uncertainty is counted at the city-hour you randomized, not at the ride ([clustered standard errors](https://doi.org/10.1093/qje/qjac038)).
 
