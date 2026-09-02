@@ -55,6 +55,8 @@ def test_switchback_closer_to_truth_than_naive():
     naive_err = np.abs(df["naive_bias"]).mean()
     sw_err = np.abs(df["switchback_bias"]).mean()
     assert sw_err < naive_err / 2
+    assert "naive_covers" in df.columns
+    assert "switchback_covers" in df.columns
 
 
 def test_naive_understates_with_supply_spillover():
@@ -142,3 +144,26 @@ def test_marketplace_poisoned_washout_does_not_move_ate():
     # Ride-level arrays are already restricted to analysis_table blocks.
     analysis_ids = set(run["analysis"]["block_id"])
     assert set(run["rider_block"]).issubset(analysis_ids)
+
+
+def test_naive_intervals_miss_truth_switchback_covers():
+    from sbetoolkit.marketplace import summarize_estimators
+
+    sim = MarketplaceSimulator(
+        MarketplaceConfig(
+            n_regions=6,
+            n_periods=16,
+            riders_per_cell=32,
+            drivers_per_cell=14,
+            p_request_control=0.7,
+            p_request_treat=0.9,
+            seed=2,
+        )
+    )
+    df = sim.compare_estimators(n_reps=24, seed=2)
+    report = summarize_estimators(df)
+    naive = report.set_index("estimator").loc["Naive rider A/B"]
+    sw = report.set_index("estimator").loc["Time-region switchback"]
+    assert naive["coverage"] < 0.15
+    assert sw["coverage"] > 0.7
+    assert abs(naive["bias"]) > abs(sw["bias"])

@@ -27,7 +27,7 @@ from sbetoolkit.calibration import (
 from sbetoolkit.cuped import cuped_adjust, cuped_theta
 from sbetoolkit.inference import Estimate, block_ate, clustered_ate, estimate_switchback, iid_ate
 from sbetoolkit.interference import InterferenceReport, diagnose_interference
-from sbetoolkit.marketplace import MarketplaceConfig, MarketplaceSimulator
+from sbetoolkit.marketplace import MarketplaceConfig, MarketplaceSimulator, summarize_estimators
 from sbetoolkit.power import PowerResult, switchback_power, switchback_sample_size
 from sbetoolkit.randomization import SwitchbackAssignment, assign_switchback
 from sbetoolkit.sequential import SequentialMonitor, spending_boundaries
@@ -53,6 +53,7 @@ __all__ = [
     "iid_ate",
     "null_config",
     "spending_boundaries",
+    "summarize_estimators",
     "switchback_power",
     "switchback_sample_size",
     "type_i_null_check",

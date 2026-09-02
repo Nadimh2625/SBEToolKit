@@ -1,6 +1,6 @@
 import numpy as np
 
-from sbetoolkit.inference import block_ate, clustered_ate, iid_ate
+from sbetoolkit.inference import Estimate, block_ate, clustered_ate, iid_ate
 
 
 def _clustered_dgp(rng, n_blocks=80, m=40, icc_sd=0.2):
@@ -46,3 +46,12 @@ def test_iid_rejects_null_too_often_cluster_does_not():
     assert np.mean(iid_r) > 0.12
     assert 0.02 <= np.mean(cl_r) <= 0.10
     assert 0.02 <= np.mean(blk_r) <= 0.10
+
+
+def test_interval_covers_its_own_point_estimate():
+    est = Estimate(ate=0.2, se=0.05, z=4.0, pvalue=0.0, n_obs=100, n_clusters=100, method="iid")
+    lo, hi = est.interval()
+    assert lo < 0.2 < hi
+    assert abs((hi - lo) / 2 - 1.95996398454 * 0.05) < 1e-9
+    assert est.covers(0.2)
+    assert not est.covers(0.4)

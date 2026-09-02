@@ -6,7 +6,7 @@ import argparse
 from pathlib import Path
 
 from sbetoolkit.calibration import empirical_power_check, type_i_null_check
-from sbetoolkit.marketplace import MarketplaceConfig, MarketplaceSimulator
+from sbetoolkit.marketplace import MarketplaceConfig, MarketplaceSimulator, summarize_estimators
 from sbetoolkit.plots import plot_empirical_power, plot_naive_vs_switchback, plot_type_i
 
 
@@ -25,8 +25,12 @@ def _chart(args: argparse.Namespace) -> int:
     comparison = sim.compare_estimators(n_reps=args.reps, seed=args.seed)
     out = Path(args.out)
     plot_naive_vs_switchback(comparison, path=out)
+    summary = summarize_estimators(comparison)
+    csv_path = out.with_suffix(".csv")
+    summary.to_csv(csv_path, index=False)
     print(f"wrote {out}")
-    print(comparison[["naive_ate", "switchback_ate", "truth_ate"]].agg(["mean", "std"]).to_string())
+    print(f"wrote {csv_path}")
+    print(summary.to_string(index=False))
     return 0
 
 
@@ -75,7 +79,7 @@ def main(argv: list[str] | None = None) -> int:
     args = p.parse_args(argv)
     if args.mode == "chart":
         args.out = args.out or "docs/naive_vs_switchback.png"
-        args.reps = 80 if args.reps is None else args.reps
+        args.reps = 500 if args.reps is None else args.reps
         return _chart(args)
     if args.mode == "null":
         args.out = args.out or "docs/type_i_null.png"

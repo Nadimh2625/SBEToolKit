@@ -18,21 +18,19 @@ This library is the toolkit for that setting. It turns a policy on and off for a
 
 **References.** Marketplace interference: [Blake & Coey (2014)](https://doi.org/10.1145/2566486.2567967); causal effects when people affect each other: [Hudgens & Halloran (2008)](https://doi.org/10.1198/016214508000000292). Switchback design and analysis: [Bojinov, Simchi-Levi & Zhao (2023)](https://doi.org/10.1287/mnsc.2022.4583). CUPED: [Deng, Xu, Kohavi & Walker (2013)](https://doi.org/10.1145/2487575.2487651). Sequential testing: [Lan & DeMets (1983)](https://doi.org/10.1093/biomet/70.3.659). When to cluster: [Abadie, Athey, Imbens & Wooldridge (2023)](https://doi.org/10.1093/qje/qjac038).
 
-A 5% test analyzed at the ride level rejects a true-zero marketplace experiment **35% of the time**. That is what happens when you port ordinary product A/B tooling into a two-sided market: you randomized 500 time-region blocks and the SE pretends you have 41,000 independent rides. Cluster at the block and the same test rejects 4.7%. The point estimate is wrong for the same reason. Treated units steal scarce supply from control, so a naive rider split shows an 11pp match-rate win when launching the policy moves total matches by half a point. **Time-region switchbacks** with block-level SEs recover the global ATE and the nominal Type I rate.
-
 ## The chart
 
-Eighty simulated launches of a demand-side treatment in a **supply-constrained** market. Ground truth is the difference in match rate between an all-treat world and an all-control world.
+Five hundred simulated launches of a demand-side treatment in a **supply-constrained** market. Ground truth is the difference in match rate between an all-treat world and an all-control world. Every estimate ships a 95% interval; coverage is how often that interval actually contains the truth.
 
 ![Naive A/B vs switchback vs ground truth](docs/naive_vs_switchback.png)
 
-| Estimator | Mean estimated lift in match rate |
-| --- | ---: |
-| Naive rider A/B | **+0.111** |
-| Time-region switchback | **+0.003** |
-| Ground truth | **+0.005** |
+| Estimator | Mean | Bias | RMSE | 95% coverage |
+| --- | ---: | ---: | ---: | ---: |
+| Naive rider A/B | **+0.112** | **+0.107** | **0.107** | **0%** |
+| Time-region switchback | **+0.005** | **+0.000** | **0.017** | **96%** |
+| Ground truth | **+0.005** | — | — | — |
 
-Naive A/B is precise and wrong: treated riders crowd out control riders for the same drivers, so the within-cell gap looks like an 11pp win. The launch does almost nothing for total matches — the market was already saturated. Switchback is noisier and unbiased.
+Naive A/B is precise and wrong: treated riders crowd out control riders for the same drivers, so the within-cell gap looks like an 11pp win. Its intervals are tight around that wrong number, so they almost never contain the launch effect. Switchback is noisier; the interval does the job a PM reads it for.
 
 That is the whole interview. The rest of the README is how to compute it.
 
@@ -101,6 +99,7 @@ Raw rates: `docs/empirical_power.csv`.
 pip install -e ".[dev]"
 python -m pytest
 python -m sbetoolkit.cli --mode chart --out docs/naive_vs_switchback.png
+python -m sbetoolkit.cli --mode null --reps 1000 --seed 11 --out docs/type_i_null.png
 python -m sbetoolkit.cli --mode power --reps 500 --seed 13 --out docs/empirical_power.png
 ```
 
@@ -189,12 +188,13 @@ Families: `obrien_fleming`, `pocock`, `kim_deMets` (power spending `α t^ρ`).
 ## Reproduce the chart
 
 ```python
-from sbetoolkit import MarketplaceConfig, MarketplaceSimulator
+from sbetoolkit import MarketplaceConfig, MarketplaceSimulator, summarize_estimators
 from sbetoolkit.plots import plot_naive_vs_switchback
 
 sim = MarketplaceSimulator(MarketplaceConfig(seed=7))
-df = sim.compare_estimators(n_reps=80, seed=7)
+df = sim.compare_estimators(n_reps=500, seed=7)
+print(summarize_estimators(df))
 plot_naive_vs_switchback(df, path="docs/naive_vs_switchback.png")
 ```
 
-`compare_estimators` draws naive rider splits and switchback assignments on the same class of market primitives and compares both to a Monte Carlo global ATE.
+`compare_estimators` draws naive rider splits and switchback assignments on the same class of market primitives and compares both to a Monte Carlo global ATE. Coverage is the share of 95% intervals that contain that ATE.
