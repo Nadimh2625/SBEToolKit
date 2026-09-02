@@ -15,6 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
+import pandas as pd
 from scipy.stats import norm
 
 from sbetoolkit.randomization import assign_switchback
@@ -152,6 +153,73 @@ def switchback_power(
         n_switches_per_region=float(np.mean(n_sw)),
         washout=washout,
     )
+
+
+def switchback_formula_se(
+    assignment,
+    sigma: float,
+    rho_ar1: float = 0.0,
+) -> float:
+    """SE of the pooled switchback contrast under the AR(1) model.
+
+    Independent regions: average of per-region ``w'Γw``, divided by
+    ``n_regions``. Matches :func:`switchback_power` when every region
+    has the same balanced design.
+    """
+    mask = assignment.analysis_mask()
+    table = assignment.table
+    vars_: list[float] = []
+    for _, g in table.groupby("region", sort=False):
+        pos = g.index.to_numpy()
+        vars_.append(
+            contrast_variance(
+                g["treatment"].to_numpy(),
+                sigma,
+                rho_ar1,
+                mask[pos],
+            )
+        )
+    return float(np.sqrt(np.mean(vars_) / len(vars_)))
+
+
+def stationary_ar1(
+    n: int,
+    sigma: float,
+    rho: float,
+    rng: np.random.Generator,
+) -> np.ndarray:
+    """Length-``n`` series with Var = σ² and Corr(t, t+k) = ρ^k."""
+    if n < 1:
+        return np.array([])
+    rho = float(np.clip(rho, -0.999, 0.999))
+    e = np.empty(n)
+    e[0] = sigma * rng.standard_normal()
+    scale = sigma * np.sqrt(max(0.0, 1.0 - rho * rho))
+    for t in range(1, n):
+        e[t] = rho * e[t - 1] + scale * rng.standard_normal()
+    return e
+
+
+def simulate_ar1_switchback(
+    assignment,
+    delta: float,
+    sigma: float,
+    rho_ar1: float,
+    rng: np.random.Generator,
+    *,
+    mu: float = 0.0,
+) -> pd.DataFrame:
+    """Block outcomes ``Y = μ + δ T + AR(1)``, the DGP behind ``w'Γw``."""
+    table = assignment.table.copy()
+    y = np.zeros(len(table))
+    for _, g in table.groupby("region", sort=False):
+        pos = g.index.to_numpy()
+        g = g.sort_values("period")
+        pos = g.index.to_numpy()
+        e = stationary_ar1(len(g), sigma, rho_ar1, rng)
+        y[pos] = mu + delta * g["treatment"].to_numpy() + e
+    table["match_rate"] = y
+    return table
 
 
 def switchback_sample_size(

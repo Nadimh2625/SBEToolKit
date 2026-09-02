@@ -133,3 +133,55 @@ def plot_type_i(
         path.parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(path, dpi=160)
     return fig
+
+
+def plot_empirical_power(
+    result,
+    *,
+    path: str | Path | None = None,
+) -> plt.Figure:
+    """Predicted 80% vs how often the sized experiment actually detects δ."""
+    fig, ax = plt.subplots(figsize=(8.6, 5.2))
+    labels = [
+        "Predicted\n(w′Γw formula)",
+        "Simulated detections\n(formula SE)",
+        "Simulated detections\n(Welch SE)",
+    ]
+    rates = [result.predicted_power, result.empirical_power, result.welch_power]
+    colors = ["#1e8449", "#1a5276", "#2471a3"]
+    bars = ax.bar(np.arange(3), rates, color=colors, width=0.62, zorder=2)
+    ax.axhline(
+        result.target_power,
+        color="#7b241c",
+        lw=2.2,
+        ls="--",
+        zorder=3,
+        label=f"Target = {100 * result.target_power:.0f}%",
+    )
+    ax.set_xticks(np.arange(3))
+    ax.set_xticklabels(labels)
+    ax.set_ylim(0, 1.0)
+    ax.set_ylabel("Power (true effect present)")
+    ax.set_title(
+        f"Power check: {result.n_reps} switchbacks at {result.n_regions}×{result.n_periods} "
+        f"(δ={result.delta}, σ={result.sigma}, ρ={result.rho_ar1})"
+    )
+    for bar, rate in zip(bars, rates):
+        ax.text(
+            bar.get_x() + bar.get_width() / 2,
+            bar.get_height() + 0.02,
+            f"{100 * rate:.1f}%",
+            ha="center",
+            va="bottom",
+            fontsize=12,
+            fontweight="bold",
+        )
+    ax.legend(frameon=False, loc="upper right")
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    fig.tight_layout()
+    if path is not None:
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(path, dpi=160)
+    return fig

@@ -14,10 +14,16 @@ Public surface
 - :mod:`sbetoolkit.interference` — naive A/B vs global ATE diagnostics
 - :mod:`sbetoolkit.marketplace` — simulated two-sided market with known truth
 - :mod:`sbetoolkit.inference` — iid vs cluster-robust vs block-level SEs
-- :mod:`sbetoolkit.calibration` — 1,000-run null Type I check
+- :mod:`sbetoolkit.calibration` — Type I null check and empirical power check
 """
 
-from sbetoolkit.calibration import TypeIResult, null_config, type_i_null_check
+from sbetoolkit.calibration import (
+    PowerCheckResult,
+    TypeIResult,
+    empirical_power_check,
+    null_config,
+    type_i_null_check,
+)
 from sbetoolkit.cuped import cuped_adjust, cuped_theta
 from sbetoolkit.inference import Estimate, block_ate, clustered_ate, estimate_switchback, iid_ate
 from sbetoolkit.interference import InterferenceReport, diagnose_interference
@@ -30,6 +36,7 @@ __all__ = [
     "Estimate",
     "MarketplaceConfig",
     "MarketplaceSimulator",
+    "PowerCheckResult",
     "PowerResult",
     "SwitchbackAssignment",
     "InterferenceReport",
@@ -42,6 +49,7 @@ __all__ = [
     "cuped_adjust",
     "cuped_theta",
     "diagnose_interference",
+    "empirical_power_check",
     "iid_ate",
     "null_config",
     "spending_boundaries",

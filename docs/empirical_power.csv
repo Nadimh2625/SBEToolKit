@@ -1,0 +1,13 @@
+quantity,value
+predicted power (w′Γw),0.8151631434217841
+empirical detection rate (formula SE),0.812
+empirical detection rate (Welch SE),0.794
+n_regions,8.0
+n_periods per region,22.0
+blocks (region × period),176.0
+δ,0.05
+σ,0.12
+ρ,0.4
+formula SE,0.017525744650277376
+Monte Carlo SD of ATE,0.017157314656046523
+MC SD / formula SE,0.97897778373571

@@ -66,13 +66,42 @@ print(result.summary())
 
 Raw rates: `docs/type_i_null.csv`.
 
+## Proof the power formula is calibrated (true effect ≠ 0)
+
+The Type I check asks whether you cry wolf too often. This one asks whether you miss a real wolf. `switchback_sample_size` said **8 regions × 22 periods** (176 blocks) for 80% power at δ = 0.05, σ = 0.12, ρ = 0.4. Five hundred simulated switchbacks at *exactly that size*, with that effect present:
+
+![Empirical power vs w′Γw prediction](docs/empirical_power.png)
+
+| | Power |
+| --- | ---: |
+| Predicted (`w′Γw`) | **81.5%** |
+| Detected (formula SE) | **81.2%** |
+| Detected (Welch SE on analysis_table) | **79.4%** |
+| Monte Carlo SD of ATE / formula SE | **0.98** |
+
+If the variance formula were wrong you would see ~55% here: the test would be sized for a different experiment than the one you run. 81% vs 80% is the formula and the simulator agreeing.
+
+```bash
+python -m sbetoolkit.cli --mode power --reps 500 --seed 13
+```
+
+```python
+from sbetoolkit import empirical_power_check, switchback_sample_size
+
+needed = switchback_sample_size(0.05, 0.12, n_regions=8, rho_ar1=0.4, power=0.8)
+print(needed.n_periods, needed.power)
+print(empirical_power_check(n_reps=500, seed=13).summary())
+```
+
+Raw rates: `docs/empirical_power.csv`.
+
 ## Install
 
 ```bash
 pip install -e ".[dev]"
 python -m pytest
 python -m sbetoolkit.cli --mode chart --out docs/naive_vs_switchback.png
-python -m sbetoolkit.cli --mode null --reps 1000 --seed 11 --out docs/type_i_null.png
+python -m sbetoolkit.cli --mode power --reps 500 --seed 13 --out docs/empirical_power.png
 ```
 
 ## Marketplace interference
