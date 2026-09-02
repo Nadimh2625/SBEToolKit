@@ -5,9 +5,9 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from sbetoolkit.calibration import type_i_null_check
+from sbetoolkit.calibration import empirical_power_check, type_i_null_check
 from sbetoolkit.marketplace import MarketplaceConfig, MarketplaceSimulator
-from sbetoolkit.plots import plot_naive_vs_switchback, plot_type_i
+from sbetoolkit.plots import plot_empirical_power, plot_naive_vs_switchback, plot_type_i
 
 
 def _chart(args: argparse.Namespace) -> int:
@@ -48,9 +48,26 @@ def _null(args: argparse.Namespace) -> int:
     return 0
 
 
+def _power(args: argparse.Namespace) -> int:
+    result = empirical_power_check(
+        n_reps=args.reps,
+        seed=args.seed,
+        alpha=args.alpha,
+    )
+    out = Path(args.out)
+    plot_empirical_power(result, path=out)
+    summary = result.summary()
+    csv_path = out.with_suffix(".csv")
+    summary.to_csv(csv_path, index=False)
+    print(f"wrote {out}")
+    print(f"wrote {csv_path}")
+    print(summary.to_string(index=False))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--mode", choices=["chart", "null"], default="chart")
+    p.add_argument("--mode", choices=["chart", "null", "power"], default="chart")
     p.add_argument("--out", default=None)
     p.add_argument("--reps", type=int, default=None)
     p.add_argument("--seed", type=int, default=7)
@@ -60,10 +77,15 @@ def main(argv: list[str] | None = None) -> int:
         args.out = args.out or "docs/naive_vs_switchback.png"
         args.reps = 80 if args.reps is None else args.reps
         return _chart(args)
-    args.out = args.out or "docs/type_i_null.png"
-    args.reps = 1000 if args.reps is None else args.reps
-    args.seed = 11 if args.seed == 7 else args.seed
-    return _null(args)
+    if args.mode == "null":
+        args.out = args.out or "docs/type_i_null.png"
+        args.reps = 1000 if args.reps is None else args.reps
+        args.seed = 11 if args.seed == 7 else args.seed
+        return _null(args)
+    args.out = args.out or "docs/empirical_power.png"
+    args.reps = 500 if args.reps is None else args.reps
+    args.seed = 13 if args.seed == 7 else args.seed
+    return _power(args)
 
 
 if __name__ == "__main__":

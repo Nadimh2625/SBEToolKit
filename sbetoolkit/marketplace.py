@@ -42,6 +42,8 @@ class MarketplaceConfig:
     extra_drivers_if_treated: int = 0
     # Pre-period covariate noise used by CUPED (cell intercept persistence).
     cell_intercept_sd: float = 0.04
+    # Serial correlation of the cell intercept within a region (AR(1)).
+    ar1_rho: float = 0.0
     seed: int = 0
 
     def __post_init__(self) -> None:
@@ -79,6 +81,18 @@ class MarketplaceSimulator:
         riders = rng.poisson(cfg.riders_per_cell, size=n_cells) + 2
         drivers = rng.poisson(cfg.drivers_per_cell, size=n_cells) + 1
         return riders, drivers
+
+    def _region_intercepts(self, rng: np.random.Generator, table: pd.DataFrame) -> np.ndarray:
+        from sbetoolkit.power import stationary_ar1
+
+        cfg = self.config
+        intercepts = np.zeros(len(table))
+        for _, sub in table.groupby("region", sort=False):
+            sub = sub.sort_values("period")
+            intercepts[sub.index.to_numpy()] = stationary_ar1(
+                len(sub), cfg.cell_intercept_sd, cfg.ar1_rho, rng
+            )
+        return intercepts
 
     def ground_truth(self, n_mc: int = 80, seed: int | None = None) -> dict[str, float]:
         """Monte Carlo global ATE: all-treat match rate − all-control match rate."""
@@ -197,7 +211,7 @@ class MarketplaceSimulator:
         table = assignment.table
         n_cells = len(table)
         riders, drivers = self._cell_sizes(rng, n_cells)
-        intercepts = rng.normal(0.0, cfg.cell_intercept_sd, size=n_cells)
+        intercepts = self._region_intercepts(rng, table)
         treat_col = table["treatment"].to_numpy()
 
         outcomes = []
