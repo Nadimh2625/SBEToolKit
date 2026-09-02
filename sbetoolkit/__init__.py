@@ -26,7 +26,7 @@ from sbetoolkit.calibration import (
 )
 from sbetoolkit.cuped import cuped_adjust, cuped_theta
 from sbetoolkit.inference import Estimate, block_ate, clustered_ate, estimate_switchback, iid_ate
-from sbetoolkit.interference import InterferenceReport, diagnose_interference
+from sbetoolkit.interference import InterferenceReport, diagnose_interference, diagnose_spatial_spillover
 from sbetoolkit.marketplace import MarketplaceConfig, MarketplaceSimulator, summarize_estimators
 from sbetoolkit.power import PowerResult, switchback_power, switchback_sample_size
 from sbetoolkit.randomization import SwitchbackAssignment, assign_switchback
@@ -49,6 +49,7 @@ __all__ = [
     "cuped_adjust",
     "cuped_theta",
     "diagnose_interference",
+    "diagnose_spatial_spillover",
     "empirical_power_check",
     "iid_ate",
     "null_config",
