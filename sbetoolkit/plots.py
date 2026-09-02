@@ -1,5 +1,3 @@
-"""Figures for the interview README: naive A/B vs switchback vs truth."""
-
 from __future__ import annotations
 
 from pathlib import Path
