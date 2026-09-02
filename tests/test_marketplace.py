@@ -97,3 +97,48 @@ def test_naive_understates_with_supply_spillover():
     # Rider-level A/B cannot apply a cell-level driver incentive.
     assert r1.naive_ate < r1.global_ate
     assert "understates" in r1.direction
+
+
+def test_marketplace_poisoned_washout_does_not_move_ate():
+    from sbetoolkit.inference import block_ate, estimate_switchback
+
+    sim = MarketplaceSimulator(
+        MarketplaceConfig(
+            n_regions=4,
+            n_periods=20,
+            riders_per_cell=16,
+            drivers_per_cell=8,
+            p_request_control=0.6,
+            p_request_treat=0.75,
+            seed=9,
+        )
+    )
+    run = sim.run_switchback(seed=9, washout=2, return_riders=True)
+    assignment = run["assignment"]
+    assert len(run["analysis"]) == len(assignment.analysis_table)
+    assert len(run["blocks"]) == len(assignment.table)
+
+    poisoned = run["blocks"].copy()
+    wash_keys = assignment.table.loc[
+        assignment.table["is_washout"], ["region", "period"]
+    ]
+    hit = (
+        poisoned.merge(wash_keys.assign(_w=True), on=["region", "period"], how="left")["_w"]
+        .fillna(False)
+        .to_numpy()
+    )
+    assert hit.any()
+    poisoned.loc[hit, "match_rate"] = 1e6
+
+    after = estimate_switchback(assignment, poisoned)
+    assert abs(after.ate - run["ate"]) < 1e-12
+    assert abs(after.se - run["se"]) < 1e-12
+    naive = block_ate(
+        poisoned["match_rate"].to_numpy(),
+        poisoned["treatment"].to_numpy(),
+    )
+    assert abs(naive.ate - run["ate"]) > 100
+
+    # Ride-level arrays are already restricted to analysis_table blocks.
+    analysis_ids = set(run["analysis"]["block_id"])
+    assert set(run["rider_block"]).issubset(analysis_ids)

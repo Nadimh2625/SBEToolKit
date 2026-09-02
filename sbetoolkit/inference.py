@@ -12,7 +12,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
+import pandas as pd
 from scipy.stats import norm
+
+from sbetoolkit.randomization import SwitchbackAssignment
 
 
 @dataclass(frozen=True)
@@ -126,3 +129,22 @@ def clustered_ate(
         n_clusters=G,
         method="cluster-robust",
     )
+
+
+def estimate_switchback(
+    assignment: SwitchbackAssignment,
+    outcomes: pd.DataFrame,
+    *,
+    outcome: str = "match_rate",
+    treatment: str = "treatment",
+) -> Estimate:
+    """Block-level ATE using only ``assignment.analysis_table`` rows.
+
+    ``outcomes`` may contain washout periods. They are dropped by an
+    inner join onto the analysis grid, not by filtering ``is_washout``
+    on the outcome frame (which is easy to forget).
+    """
+    sample = assignment.for_analysis(outcomes)
+    if outcome not in sample.columns or treatment not in sample.columns:
+        raise ValueError(f"outcomes must contain {outcome!r} and {treatment!r}")
+    return block_ate(sample[outcome].to_numpy(), sample[treatment].to_numpy())

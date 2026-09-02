@@ -39,8 +39,40 @@ class SwitchbackAssignment:
 
     @property
     def analysis_table(self) -> pd.DataFrame:
-        """Blocks that are not in a washout window."""
+        """Blocks that are not in a washout window.
+
+        This is the only definition of the estimation sample. Downstream
+        code should join outcomes onto this frame (see :meth:`for_analysis`)
+        instead of filtering ``table`` themselves.
+        """
         return self.table.loc[~self.table["is_washout"]].copy()
+
+    def analysis_mask(self) -> np.ndarray:
+        """Boolean mask on ``table``, True iff the row is in ``analysis_table``.
+
+        Power calculations keep the full calendar (for AR(1) lags) and
+        use this mask so washout periods occupy time without entering
+        the contrast.
+        """
+        kept = pd.MultiIndex.from_frame(self.analysis_table[["region", "period"]])
+        idx = pd.MultiIndex.from_frame(self.table[["region", "period"]])
+        return np.asarray(idx.isin(kept))
+
+    def for_analysis(self, outcomes: pd.DataFrame) -> pd.DataFrame:
+        """Inner-join ``outcomes`` onto :attr:`analysis_table`.
+
+        Rows whose ``(region, period)`` is a washout (or burn-in) never
+        appear in the result, even if they are present in ``outcomes``
+        with garbage values.
+        """
+        keys = ["region", "period"]
+        missing = [c for c in keys if c not in outcomes.columns]
+        if missing:
+            raise ValueError(f"outcomes missing columns {missing}")
+        sample = outcomes.merge(self.analysis_table[keys], on=keys, how="inner")
+        if sample.empty:
+            raise ValueError("no (region, period) overlap with analysis_table")
+        return sample
 
     def n_switches(self) -> pd.Series:
         """Number of treatment flips per region."""
