@@ -265,3 +265,54 @@ def assign_switchback(
         spatial_buffer=spatial_buffer,
         cluster_size=cluster_size,
     )
+
+
+def spatial_buffer_cost(
+    n_regions: int = 6,
+    n_periods: int = 16,
+    *,
+    cluster_sizes: tuple[int, ...] = (1, 2, 3),
+    spatial_buffer: int = 1,
+    washout: int = 0,
+    n_draws: int = 200,
+    seed: int = 0,
+    design: DesignName = "balanced",
+) -> pd.DataFrame:
+    """Share of cells that survive a spatial buffer, by cluster size.
+
+    Bigger clusters mean fewer T/C borders and more interior, but fewer
+    independent sequences to randomize. This is that tradeoff as a keep
+    rate: ``keep_frac`` is the mean of ``len(analysis_table) / len(table)``.
+    """
+    regions = [f"r{i}" for i in range(n_regions)]
+    periods = list(range(n_periods))
+    n_cells = n_regions * n_periods
+    rows = []
+    rng = np.random.default_rng(seed)
+    for k in cluster_sizes:
+        kept = []
+        for _ in range(n_draws):
+            a = assign_switchback(
+                regions,
+                periods,
+                design=design,
+                washout=washout,
+                cluster_size=int(k),
+                spatial_buffer=spatial_buffer,
+                seed=int(rng.integers(0, 1_000_000_000)),
+            )
+            kept.append(len(a.analysis_table) / len(a.table))
+        arr = np.asarray(kept)
+        rows.append(
+            {
+                "cluster_size": int(k),
+                "n_clusters": int(np.ceil(n_regions / k)),
+                "spatial_buffer": spatial_buffer,
+                "washout": washout,
+                "n_cells": n_cells,
+                "keep_frac": float(arr.mean()),
+                "keep_frac_sd": float(arr.std(ddof=1)) if n_draws > 1 else 0.0,
+                "n_draws": n_draws,
+            }
+        )
+    return pd.DataFrame(rows)

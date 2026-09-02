@@ -75,10 +75,32 @@ def test_leakage_biases_unbuffered_switchback():
 
 def test_spatial_buffer_reduces_leakage_bias():
     sim = MarketplaceSimulator(_cross_border_config(driver_leakage=1.0, seed=3))
-    report = diagnose_spatial_spillover(sim, n_reps=20, seed=3, cluster_size=3)
-    unbuf = abs(report.set_index("spatial_buffer").loc[0, "bias"])
-    buf = abs(report.set_index("spatial_buffer").loc[1, "bias"])
+    report = diagnose_spatial_spillover(sim, n_reps=40, seed=3, cluster_size=3)
+    by_cond = report.set_index("condition")
+    unbuf = abs(by_cond.loc["leakage, no buffer", "bias"])
+    buf = abs(by_cond.loc["leakage, spatial buffer", "bias"])
+    sealed = abs(by_cond.loc["sealed zones", "bias"])
+    assert unbuf > 0.02
     assert buf < unbuf
+    assert sealed < 0.03
+    assert by_cond.loc["leakage, spatial buffer", "keep_frac"] < 0.99
+    assert by_cond.loc["leakage, no buffer", "keep_frac"] == pytest.approx(1.0)
+
+
+def test_spatial_buffer_cost_rises_with_cluster_size():
+    from sbetoolkit.randomization import spatial_buffer_cost
+
+    cost = spatial_buffer_cost(
+        n_regions=6,
+        n_periods=16,
+        cluster_sizes=(1, 3),
+        n_draws=80,
+        seed=0,
+    )
+    keep = cost.set_index("cluster_size")["keep_frac"]
+    assert keep.loc[1] < keep.loc[3]
+    assert keep.loc[1] < 0.5
+    assert cost.loc[cost["cluster_size"] == 3, "n_clusters"].iloc[0] == 2
 
 
 def test_diagnose_spatial_requires_leakage():
