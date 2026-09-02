@@ -73,36 +73,6 @@ class InterferenceReport:
         )
 
 
-def _cell_world_rate(
-    sim: MarketplaceSimulator,
-    *,
-    all_treated: bool,
-    n_mc: int,
-    rng: np.random.Generator,
-) -> float:
-    cfg = sim.config
-    rates = []
-    n_cells = cfg.n_regions * cfg.n_periods
-    for _ in range(n_mc):
-        riders, drivers = sim._cell_sizes(rng, n_cells)
-        cell_rates = []
-        for n_r, n_d in zip(riders, drivers):
-            treated = np.full(n_r, all_treated)
-            extra = cfg.extra_drivers_if_treated if all_treated else 0
-            from sbetoolkit.marketplace import _match
-
-            y = _match(
-                treated,
-                n_d + extra,
-                cfg.p_request_control,
-                cfg.p_request_treat,
-                rng,
-            )
-            cell_rates.append(y.mean())
-        rates.append(float(np.mean(cell_rates)))
-    return float(np.mean(rates))
-
-
 def diagnose_interference(
     sim: MarketplaceSimulator,
     *,
@@ -118,8 +88,8 @@ def diagnose_interference(
     mixed_c = float(naive["cells"]["match_control"].mean())
     naive_ate = mixed_t - mixed_c
 
-    all_t = _cell_world_rate(sim, all_treated=True, n_mc=n_mc, rng=rng)
-    all_c = _cell_world_rate(sim, all_treated=False, n_mc=n_mc, rng=rng)
+    all_t = float(np.mean([sim._world_mean_rate(rng, True) for _ in range(n_mc)]))
+    all_c = float(np.mean([sim._world_mean_rate(rng, False) for _ in range(n_mc)]))
     global_ate = all_t - all_c
 
     crowding = all_c - mixed_c
@@ -150,3 +120,44 @@ def diagnose_interference(
         relative_bias=float(rel),
         direction=direction,
     )
+
+
+def diagnose_spatial_spillover(
+    sim: MarketplaceSimulator,
+    *,
+    n_reps: int = 24,
+    seed: int = 0,
+    cluster_size: int = 3,
+) -> pd.DataFrame:
+    """Switchback ATE vs truth with and without a spatial buffer.
+
+    Adjacent treated/control regions leak leftover drivers. Buffering
+    drops the border; clustering adjacent regions onto one sequence
+    leaves an interior that the buffer can keep.
+    """
+    if sim.config.driver_leakage <= 0:
+        raise ValueError("driver_leakage must be > 0 to diagnose spatial spillover")
+    rng = np.random.default_rng(seed)
+    truth = sim.ground_truth(n_mc=30, seed=seed)["ate"]
+    rows = []
+    for buffer in (0, 1):
+        ates = []
+        for _ in range(n_reps):
+            run = sim.run_switchback(
+                seed=int(rng.integers(0, 1_000_000_000)),
+                cluster_size=cluster_size,
+                spatial_buffer=buffer,
+            )
+            ates.append(run["ate"])
+        arr = np.asarray(ates)
+        rows.append(
+            {
+                "spatial_buffer": buffer,
+                "cluster_size": cluster_size,
+                "mean_ate": float(arr.mean()),
+                "bias": float(arr.mean() - truth),
+                "rmse": float(np.sqrt(np.mean((arr - truth) ** 2))),
+                "truth_ate": truth,
+            }
+        )
+    return pd.DataFrame(rows)

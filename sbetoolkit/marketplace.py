@@ -44,6 +44,11 @@ class MarketplaceConfig:
     cell_intercept_sd: float = 0.04
     # Serial correlation of the cell intercept within a region (AR(1)).
     ar1_rho: float = 0.0
+    # Share of leftover drivers who will serve unmatched demand in a
+    # neighboring region (0 = sealed zones, 1 = leftover supply is shared).
+    # Has bite when control cells have idle drivers and treated cells have
+    # leftover demand — not when every cell is already supply-constrained.
+    driver_leakage: float = 0.0
     seed: int = 0
 
     def __post_init__(self) -> None:
@@ -51,6 +56,8 @@ class MarketplaceConfig:
             raise ValueError("need at least 2 riders to split a naive A/B")
         if not 0 < self.p_request_control < 1 or not 0 < self.p_request_treat < 1:
             raise ValueError("request probabilities must be in (0, 1)")
+        if not 0 <= self.driver_leakage <= 1:
+            raise ValueError("driver_leakage must be in [0, 1]")
 
 
 def _match(
@@ -59,8 +66,8 @@ def _match(
     p_ctrl: float,
     p_treat: float,
     rng: np.random.Generator,
-) -> np.ndarray:
-    """Return a 0/1 match indicator per rider."""
+) -> tuple[np.ndarray, int, int]:
+    """Local matching. Returns (y, leftover_drivers, leftover_demand)."""
     p = np.where(treated, p_treat, p_ctrl)
     requests = rng.random(len(treated)) < p
     idx = np.flatnonzero(requests)
@@ -68,6 +75,53 @@ def _match(
     n_match = min(len(idx), int(n_drivers))
     y = np.zeros(len(treated), dtype=float)
     y[idx[:n_match]] = 1.0
+    leftover_drivers = max(0, int(n_drivers) - n_match)
+    leftover_demand = max(0, int(len(idx) - n_match))
+    return y, leftover_drivers, leftover_demand
+
+
+def _leak_extra_matches(
+    leftover_drivers: np.ndarray,
+    leftover_demand: np.ndarray,
+    leakage: float,
+) -> np.ndarray:
+    """Inbound extra matches from neighboring leftover supply (ring)."""
+    leftover_drivers = np.asarray(leftover_drivers, dtype=int)
+    leftover_demand = np.asarray(leftover_demand, dtype=int)
+    n = leftover_drivers.size
+    extra = np.zeros(n, dtype=int)
+    if leakage <= 0 or n < 2:
+        return extra
+    supply = leftover_drivers.copy()
+    need = leftover_demand.copy()
+    for i in range(n):
+        budget = min(int(round(leakage * int(leftover_drivers[i]))), int(supply[i]))
+        if budget <= 0:
+            continue
+        if n == 2:
+            neighbors = [1 - i]
+        else:
+            neighbors = [(i - 1) % n, (i + 1) % n]
+        needy = [j for j in neighbors if need[j] > 0]
+        for j in needy:
+            if budget <= 0:
+                break
+            give = min(need[j], budget)
+            extra[j] += give
+            need[j] -= give
+            budget -= give
+            supply[i] -= give
+    return extra
+
+
+def _attach_inbound(y: np.ndarray, n_extra: int, rng: np.random.Generator) -> np.ndarray:
+    """Assign leftover inbound matches to currently unmatched riders."""
+    if n_extra <= 0:
+        return y
+    y = y.copy()
+    open_slots = np.flatnonzero(y == 0)
+    rng.shuffle(open_slots)
+    y[open_slots[: min(n_extra, open_slots.size)]] = 1.0
     return y
 
 
@@ -94,27 +148,58 @@ class MarketplaceSimulator:
             )
         return intercepts
 
+    def _match_regions(
+        self,
+        n_riders: np.ndarray,
+        n_drivers: np.ndarray,
+        treatment: np.ndarray,
+        rng: np.random.Generator,
+    ) -> list[np.ndarray]:
+        """Match one period across regions, then leak leftover drivers to neighbors."""
+        cfg = self.config
+        ys: list[np.ndarray] = []
+        leftover_d: list[int] = []
+        leftover_q: list[int] = []
+        for n_r, n_d, t in zip(n_riders, n_drivers, treatment):
+            extra = cfg.extra_drivers_if_treated if int(t) else 0
+            treated = np.full(int(n_r), bool(t))
+            y, ld, lq = _match(
+                treated,
+                int(n_d) + extra,
+                cfg.p_request_control,
+                cfg.p_request_treat,
+                rng,
+            )
+            ys.append(y)
+            leftover_d.append(ld)
+            leftover_q.append(lq)
+        inbound = _leak_extra_matches(
+            np.asarray(leftover_d), np.asarray(leftover_q), cfg.driver_leakage
+        )
+        return [_attach_inbound(y, int(k), rng) for y, k in zip(ys, inbound)]
+
+    def _world_mean_rate(self, rng: np.random.Generator, all_treated: bool) -> float:
+        cfg = self.config
+        n_cells = cfg.n_regions * cfg.n_periods
+        riders, drivers = self._cell_sizes(rng, n_cells)
+        riders = riders.reshape(cfg.n_regions, cfg.n_periods)
+        drivers = drivers.reshape(cfg.n_regions, cfg.n_periods)
+        treat = np.full(cfg.n_regions, 1 if all_treated else 0)
+        rates = []
+        for p in range(cfg.n_periods):
+            ys = self._match_regions(riders[:, p], drivers[:, p], treat, rng)
+            rates.extend(float(y.mean()) for y in ys)
+        return float(np.mean(rates))
+
     def ground_truth(self, n_mc: int = 80, seed: int | None = None) -> dict[str, float]:
         """Monte Carlo global ATE: all-treat match rate − all-control match rate."""
         cfg = self.config
         rng = np.random.default_rng(cfg.seed if seed is None else seed)
         diffs = []
-        n_cells = cfg.n_regions * cfg.n_periods
         for _ in range(n_mc):
-            riders, drivers = self._cell_sizes(rng, n_cells)
-            y_t = []
-            y_c = []
-            for n_r, n_d in zip(riders, drivers):
-                treated = np.ones(n_r, dtype=bool)
-                control = np.zeros(n_r, dtype=bool)
-                extra = cfg.extra_drivers_if_treated
-                y_t.append(
-                    _match(treated, n_d + extra, cfg.p_request_control, cfg.p_request_treat, rng).mean()
-                )
-                y_c.append(
-                    _match(control, n_d, cfg.p_request_control, cfg.p_request_treat, rng).mean()
-                )
-            diffs.append(float(np.mean(y_t) - np.mean(y_c)))
+            y_t = self._world_mean_rate(rng, True)
+            y_c = self._world_mean_rate(rng, False)
+            diffs.append(y_t - y_c)
         return {
             "ate": float(np.mean(diffs)),
             "se": float(np.std(diffs, ddof=1) / np.sqrt(len(diffs))),
@@ -137,7 +222,7 @@ class MarketplaceSimulator:
             treated = np.zeros(n_r, dtype=bool)
             treated[: n_r // 2] = True
             rng.shuffle(treated)
-            y = _match(treated, n_d, cfg.p_request_control, cfg.p_request_treat, rng)
+            y, _, _ = _match(treated, n_d, cfg.p_request_control, cfg.p_request_treat, rng)
             # Covariate: pre-period match rate ≈ intercept + noise (untreated world).
             x = np.clip(cfg.p_request_control + b + rng.normal(0, 0.05, n_r), 0, 1)
             y_obs = np.clip(y + b, 0, 1)
@@ -186,13 +271,16 @@ class MarketplaceSimulator:
         design: str = "balanced",
         washout: int = 0,
         switch_every: int = 1,
+        cluster_size: int = 1,
+        spatial_buffer: int = 0,
         return_riders: bool = False,
     ) -> dict:
         """Cell-level switchback: one policy per (region, period).
 
-        ``ate`` / ``se`` are the *block-level* difference in means (one
-        row per randomized cell). Set ``return_riders=True`` to also get
-        ride-level arrays for the iid-vs-cluster Type I check.
+        ``cluster_size`` groups adjacent regions onto one sequence so a
+        spatial buffer has an interior. ``spatial_buffer`` drops cells
+        that border the opposite arm (same period). Leftover drivers
+        leak to neighbors when ``config.driver_leakage > 0``.
         """
         from sbetoolkit.inference import estimate_switchback
 
@@ -206,53 +294,66 @@ class MarketplaceSimulator:
             design=design,  # type: ignore[arg-type]
             washout=washout,
             switch_every=switch_every,
+            cluster_size=cluster_size,
+            spatial_buffer=spatial_buffer,
             seed=int(rng.integers(0, 1_000_000_000)),
         )
         table = assignment.table
         n_cells = len(table)
         riders, drivers = self._cell_sizes(rng, n_cells)
         intercepts = self._region_intercepts(rng, table)
-        treat_col = table["treatment"].to_numpy()
+        work = table.copy()
+        work["n_riders"] = riders
+        work["n_drivers"] = drivers
+        work["intercept"] = intercepts
+        region_order = {r: i for i, r in enumerate(regions)}
 
-        outcomes = []
+        outcomes: list[dict] = []
         rider_y: list[np.ndarray] = []
         rider_t: list[np.ndarray] = []
         rider_block: list[np.ndarray] = []
 
-        for i in range(n_cells):
-            n_r = int(riders[i])
-            n_d = int(drivers[i])
-            treat = int(treat_col[i])
-            treated = np.full(n_r, bool(treat))
-            extra = cfg.extra_drivers_if_treated if treat else 0
-            y = _match(treated, n_d + extra, cfg.p_request_control, cfg.p_request_treat, rng)
-            b = intercepts[i]
-            y_obs = np.clip(y + b, 0, 1)
-            x = float(
-                np.clip(
-                    cfg.p_request_control * min(1.0, n_d / max(n_r * cfg.p_request_control, 1e-9))
-                    + b
-                    + rng.normal(0, 0.03),
-                    0,
-                    1,
+        for period, g in work.groupby("period"):
+            g = g.assign(_ord=g["region"].map(region_order)).sort_values("_ord")
+            treat = g["treatment"].to_numpy()
+            ys = self._match_regions(
+                g["n_riders"].to_numpy(),
+                g["n_drivers"].to_numpy(),
+                treat,
+                rng,
+            )
+            for row, y, t in zip(g.itertuples(), ys, treat):
+                b = float(row.intercept)
+                y_obs = np.clip(y + b, 0, 1)
+                extra = cfg.extra_drivers_if_treated if int(t) else 0
+                n_r = int(row.n_riders)
+                n_d = int(row.n_drivers) + extra
+                x = float(
+                    np.clip(
+                        cfg.p_request_control * min(1.0, n_d / max(n_r * cfg.p_request_control, 1e-9))
+                        + b
+                        + rng.normal(0, 0.03),
+                        0,
+                        1,
+                    )
                 )
-            )
-            outcomes.append(
-                {
-                    "region": table["region"].iloc[i],
-                    "period": table["period"].iloc[i],
-                    "treatment": treat,
-                    "n_riders": n_r,
-                    "n_drivers": n_d + extra,
-                    "match_rate": float(y_obs.mean()),
-                    "pre_match_rate": x,
-                    "block_id": i,
-                }
-            )
-            if return_riders:
-                rider_y.append(y_obs)
-                rider_t.append(np.full(n_r, treat, dtype=int))
-                rider_block.append(np.full(n_r, i, dtype=int))
+                idx = int(row.Index)
+                outcomes.append(
+                    {
+                        "region": row.region,
+                        "period": row.period,
+                        "treatment": int(t),
+                        "n_riders": n_r,
+                        "n_drivers": n_d,
+                        "match_rate": float(y_obs.mean()),
+                        "pre_match_rate": x,
+                        "block_id": idx,
+                    }
+                )
+                if return_riders:
+                    rider_y.append(y_obs)
+                    rider_t.append(np.full(n_r, int(t), dtype=int))
+                    rider_block.append(np.full(n_r, idx, dtype=int))
 
         frame = pd.DataFrame(outcomes)
         analysis = assignment.for_analysis(frame)
