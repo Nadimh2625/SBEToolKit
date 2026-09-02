@@ -1,6 +1,18 @@
 # SwitchbackExpToolkit
 
-A coupon test on a shopping site can treat each person as their own little world. The same test on a rideshare or delivery network cannot: giving a discount to some riders lengthens the wait for everyone else still looking for a car. Ordinary A/B tests then measure *who won the scramble*, not *what happens if you launch the policy*, and they often report fake precision besides — every ride looks like a new data point even though you only flipped the city-hour a few hundred times.
+Normal A/B testing breaks in a rideshare or delivery marketplace, and this library is the set of tools that makes testing work there instead.
+
+The problem, in plain terms is if you're testing a functionality such as button color on a shopping site, each user is basically in their own bubble. What happens to one person doesn't change what happens to anyone else. So you can split users in half, compare and be done.
+
+A ridesharing app isn't like that. There's a limited number of drivers on the road. If you give half the riders a discount and they start requesting more rides, they take drivers away from the other half. So the discount group looks great and the no-discount group looks worse, but you haven't created a single extra ride. You just moved rides from one group to the other.
+
+And essentially your test says "+11% wins!" so of course you launch it to everyone, and then you see total rides go up by half a percent. The test just simply measured who won a fight over a fixed pool, not whether the feature is worth shipping.
+
+Also there is another issue about confidence; for example think of polling~ if you want to know what a city thinks, and you ask 500 different people, you will get 500 real opinions. If instead you ask 500 people but they're all sitting in the same room agreeing with each other, you don't have 500 opinions. You have a handful, repeated.
+
+That's your rides. All the rides in an area f.e Brooklyn at 3pm are stuck together, because they're all fighting over the same drivers that hour. If drivers are scarce that hour, everybody in that hour has a bad time together. So those rides aren't separate pieces of information. They're one hour's worth of information.
+
+To prove our test is calibrated we run an experiment where the feature does absolutely nothing, a thousand times over. A properly calibrated test should falsely declare victory about 5% of the time. The ride-level version declares victory 35% of the time so we would be shipping fake wins in a third of your experiments and have no idea.
 
 This library is the toolkit for that setting. It turns a policy on and off for a whole city and time window at once ([switchback experiments](https://arxiv.org/abs/2009.00148)), plans how many of those windows you need, uses last week’s numbers to cut noise ([CUPED](https://doi.org/10.1145/2487575.2487651)), lets you peek at results without inflating false alarms ([alpha spending](https://doi.org/10.1093/biomet/70.3.659)), and checks the whole pipeline on a fake marketplace where the true effect is known. Uncertainty is counted at the city-hour you randomized, not at the ride ([clustered standard errors](https://doi.org/10.1093/qje/qjac038)).
 
