@@ -180,7 +180,7 @@ class MarketplaceSimulator:
         row per randomized cell). Set ``return_riders=True`` to also get
         ride-level arrays for the iid-vs-cluster Type I check.
         """
-        from sbetoolkit.inference import block_ate
+        from sbetoolkit.inference import estimate_switchback
 
         cfg = self.config
         rng = np.random.default_rng(cfg.seed if seed is None else seed)
@@ -199,13 +199,11 @@ class MarketplaceSimulator:
         riders, drivers = self._cell_sizes(rng, n_cells)
         intercepts = rng.normal(0.0, cfg.cell_intercept_sd, size=n_cells)
         treat_col = table["treatment"].to_numpy()
-        wash_col = table["is_washout"].to_numpy()
 
         outcomes = []
         rider_y: list[np.ndarray] = []
         rider_t: list[np.ndarray] = []
         rider_block: list[np.ndarray] = []
-        rider_keep: list[np.ndarray] = []
 
         for i in range(n_cells):
             n_r = int(riders[i])
@@ -230,7 +228,6 @@ class MarketplaceSimulator:
                     "region": table["region"].iloc[i],
                     "period": table["period"].iloc[i],
                     "treatment": treat,
-                    "is_washout": bool(wash_col[i]),
                     "n_riders": n_r,
                     "n_drivers": n_d + extra,
                     "match_rate": float(y_obs.mean()),
@@ -242,11 +239,10 @@ class MarketplaceSimulator:
                 rider_y.append(y_obs)
                 rider_t.append(np.full(n_r, treat, dtype=int))
                 rider_block.append(np.full(n_r, i, dtype=int))
-                rider_keep.append(np.full(n_r, not bool(wash_col[i]), dtype=bool))
 
         frame = pd.DataFrame(outcomes)
-        analysis = frame.loc[~frame["is_washout"]]
-        est = block_ate(analysis["match_rate"].to_numpy(), analysis["treatment"].to_numpy())
+        analysis = assignment.for_analysis(frame)
+        est = estimate_switchback(assignment, frame)
         out: dict = {
             "ate": est.ate,
             "se": est.se,
@@ -257,10 +253,12 @@ class MarketplaceSimulator:
             "analysis": analysis,
         }
         if return_riders:
-            keep = np.concatenate(rider_keep)
+            keep_ids = set(analysis["block_id"].to_numpy())
+            block_ids = np.concatenate(rider_block)
+            keep = np.isin(block_ids, list(keep_ids))
             out["rider_y"] = np.concatenate(rider_y)[keep]
             out["rider_treatment"] = np.concatenate(rider_t)[keep]
-            out["rider_block"] = np.concatenate(rider_block)[keep]
+            out["rider_block"] = block_ids[keep]
         return out
 
     def compare_estimators(self, n_reps: int = 64, seed: int = 1) -> pd.DataFrame:

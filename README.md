@@ -96,7 +96,7 @@ The diagnostic splits the bias into **control crowding-out** (control match rate
 ## Switchback randomization
 
 ```python
-from sbetoolkit import assign_switchback
+from sbetoolkit import assign_switchback, estimate_switchback
 
 design = assign_switchback(
     regions=["sf", "nyc", "chi", "aus"],
@@ -105,11 +105,11 @@ design = assign_switchback(
     washout=1,           # drop re-equilibration periods after each switch
     seed=0,
 )
-design.table.head()
-design.n_switches()
+design.analysis_table  # estimation sample; washout rows are gone
+estimate_switchback(design, outcomes)  # joins on analysis_table, not table
 ```
 
-Blocks are `(region, period)`. Washout flags are on the assignment table; analysis should use `design.analysis_table`.
+Blocks are `(region, period)`. `design.table` is the full calendar (needed to simulate the world, including re-equilibration). Every estimator goes through `design.analysis_table`. Poison the washout rows and the ATE does not move.
 
 ## Power / sample size
 

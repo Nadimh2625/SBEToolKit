@@ -125,9 +125,9 @@ def switchback_power(
             seed=None if seed is None else seed + i,
         )
         treat = assignment.table["treatment"].to_numpy()
-        keep = ~assignment.table["is_washout"].to_numpy()
+        keep = assignment.analysis_mask()
         vars_.append(contrast_variance(treat, sigma, rho_ar1, keep))
-        n_keep.append(int(keep.sum()))
+        n_keep.append(int(len(assignment.analysis_table)))
         n_sw.append(float(assignment.n_switches().iloc[0]))
 
     var_one = float(np.mean(vars_))

@@ -19,7 +19,7 @@ Public surface
 
 from sbetoolkit.calibration import TypeIResult, null_config, type_i_null_check
 from sbetoolkit.cuped import cuped_adjust, cuped_theta
-from sbetoolkit.inference import Estimate, block_ate, clustered_ate, iid_ate
+from sbetoolkit.inference import Estimate, block_ate, clustered_ate, estimate_switchback, iid_ate
 from sbetoolkit.interference import InterferenceReport, diagnose_interference
 from sbetoolkit.marketplace import MarketplaceConfig, MarketplaceSimulator
 from sbetoolkit.power import PowerResult, switchback_power, switchback_sample_size
@@ -38,6 +38,7 @@ __all__ = [
     "assign_switchback",
     "block_ate",
     "clustered_ate",
+    "estimate_switchback",
     "cuped_adjust",
     "cuped_theta",
     "diagnose_interference",
