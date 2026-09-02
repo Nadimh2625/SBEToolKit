@@ -31,6 +31,17 @@ class Estimate:
     def reject(self, alpha: float = 0.05) -> bool:
         return self.pvalue < alpha
 
+    def interval(self, level: float = 0.95) -> tuple[float, float]:
+        """Wald interval ``ate ± z_{1-α/2} SE``."""
+        if not 0 < level < 1:
+            raise ValueError("level must be in (0, 1)")
+        z = float(norm.ppf(1 - (1 - level) / 2))
+        return (self.ate - z * self.se, self.ate + z * self.se)
+
+    def covers(self, truth: float, level: float = 0.95) -> bool:
+        lo, hi = self.interval(level)
+        return bool(lo <= truth <= hi)
+
 
 def _welch(y: np.ndarray, treatment: np.ndarray, method: str, n_clusters: int) -> Estimate:
     y = np.asarray(y, dtype=float)

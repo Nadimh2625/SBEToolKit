@@ -278,24 +278,74 @@ class MarketplaceSimulator:
     def compare_estimators(self, n_reps: int = 64, seed: int = 1) -> pd.DataFrame:
         """Paired Monte Carlo of naive A/B vs switchback vs ground truth.
 
-        Ground truth is shared (computed once). Each replication redraws
-        cell sizes, matching, and the switchback assignment.
+        Each row is one experiment: point estimates, 95% Wald intervals,
+        and whether those intervals contain the known global ATE.
         """
-        truth = self.ground_truth(n_mc=60, seed=seed)
+        from sbetoolkit.inference import iid_ate
+
+        truth = self.ground_truth(n_mc=200, seed=seed)
+        truth_ate = truth["ate"]
         rows = []
         rng = np.random.default_rng(seed)
         for i in range(n_reps):
             s = int(rng.integers(0, 1_000_000_000))
             naive = self.run_naive_ab(seed=s)
             sw = self.run_switchback(seed=s + 1)
+            naive_est = iid_ate(naive["rider_y"], naive["rider_treatment"])
+            sw_est = sw["estimate"]
+            n_lo, n_hi = naive_est.interval()
+            s_lo, s_hi = sw_est.interval()
             rows.append(
                 {
                     "rep": i,
-                    "naive_ate": naive["ate"],
-                    "switchback_ate": sw["ate"],
-                    "truth_ate": truth["ate"],
-                    "naive_bias": naive["ate"] - truth["ate"],
-                    "switchback_bias": sw["ate"] - truth["ate"],
+                    "naive_ate": naive_est.ate,
+                    "naive_se": naive_est.se,
+                    "naive_lo": n_lo,
+                    "naive_hi": n_hi,
+                    "naive_covers": naive_est.covers(truth_ate),
+                    "switchback_ate": sw_est.ate,
+                    "switchback_se": sw_est.se,
+                    "switchback_lo": s_lo,
+                    "switchback_hi": s_hi,
+                    "switchback_covers": sw_est.covers(truth_ate),
+                    "truth_ate": truth_ate,
+                    "naive_bias": naive_est.ate - truth_ate,
+                    "switchback_bias": sw_est.ate - truth_ate,
                 }
             )
         return pd.DataFrame(rows)
+
+
+def summarize_estimators(comparison: pd.DataFrame) -> pd.DataFrame:
+    """Coverage, bias, and RMSE of naive A/B vs switchback vs truth."""
+    truth = float(comparison["truth_ate"].iloc[0])
+
+    def _row(name: str, ate: np.ndarray, covers: np.ndarray | None) -> dict:
+        err = ate - truth
+        return {
+            "estimator": name,
+            "mean": float(ate.mean()),
+            "bias": float(err.mean()),
+            "rmse": float(np.sqrt(np.mean(err**2))),
+            "coverage": float(covers.mean()) if covers is not None else float("nan"),
+        }
+
+    return pd.DataFrame(
+        [
+            _row(
+                "Naive rider A/B",
+                comparison["naive_ate"].to_numpy(),
+                comparison["naive_covers"].to_numpy(),
+            ),
+            _row(
+                "Time-region switchback",
+                comparison["switchback_ate"].to_numpy(),
+                comparison["switchback_covers"].to_numpy(),
+            ),
+            _row(
+                "Ground truth",
+                np.full(len(comparison), truth),
+                None,
+            ),
+        ]
+    )
