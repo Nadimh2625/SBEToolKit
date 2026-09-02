@@ -107,6 +107,31 @@ def test_poisoned_washout_does_not_move_estimate():
     assert abs(naive.ate - clean.ate) > 100
 
 
+def test_poisoned_spatial_buffer_does_not_move_estimate():
+    from sbetoolkit.inference import estimate_switchback
+
+    a = assign_switchback(
+        [f"r{i}" for i in range(6)],
+        range(16),
+        cluster_size=3,
+        spatial_buffer=1,
+        seed=9,
+    )
+    rng = np.random.default_rng(9)
+    outcomes = a.table[["region", "period", "treatment", "is_spatial_buffer"]].copy()
+    outcomes["match_rate"] = np.where(
+        outcomes["treatment"] == 1,
+        0.6 + rng.normal(0, 0.02, len(outcomes)),
+        0.5 + rng.normal(0, 0.02, len(outcomes)),
+    )
+    clean = estimate_switchback(a, outcomes)
+    poisoned = outcomes.copy()
+    poisoned.loc[poisoned["is_spatial_buffer"], "match_rate"] = 1e6
+    after = estimate_switchback(a, poisoned)
+    assert abs(clean.ate - after.ate) < 1e-12
+    assert a.table["is_spatial_buffer"].any()
+
+
 def test_invalid_p_treat():
     with pytest.raises(ValueError):
         assign_switchback(["r"], range(4), p_treat=1.0)

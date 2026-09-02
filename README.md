@@ -32,6 +32,10 @@ Turn the feature on for all of Brooklyn from 2 to 3pm. Off from 3 to 4. On from 
 
 Then count your evidence in city-hours (about 500 of them), not rides (about 41,000).
 
+The catch: leftover drivers can still serve a neighboring region. A discount in Brooklyn at 3pm pulls cars out of Queens, and Queens looks worse even though it was "control." Production switchbacks use large, well-separated zones, not adjacent city blocks.
+
+The library models that leak (`driver_leakage`). To estimate without the border, put adjacent regions on one sequence (`cluster_size`) so an interior exists, then drop cells that touch the other arm (`spatial_buffer`). Those interiors are what `analysis_table` keeps, same idea as a temporal washout.
+
 ## How I know it works
 
 I built a fake marketplace where I set the true answer myself, then ran each method against it. The tables below have the exact figures. In English, here is what I checked:
@@ -144,7 +148,12 @@ python -m sbetoolkit.cli --mode power --reps 500 --seed 13 --out docs/empirical_
 ## Marketplace interference
 
 ```python
-from sbetoolkit import MarketplaceConfig, MarketplaceSimulator, diagnose_interference
+from sbetoolkit import (
+    MarketplaceConfig,
+    MarketplaceSimulator,
+    diagnose_interference,
+    diagnose_spatial_spillover,
+)
 
 sim = MarketplaceSimulator(MarketplaceConfig(
     n_regions=8, n_periods=24,
@@ -155,6 +164,14 @@ sim = MarketplaceSimulator(MarketplaceConfig(
 print(sim.ground_truth())
 print(diagnose_interference(sim).direction)
 # → naive A/B overstates the global effect
+
+leaky = MarketplaceSimulator(MarketplaceConfig(
+    n_regions=6, n_periods=16, drivers_per_cell=30,
+    p_request_control=0.50, p_request_treat=0.95,
+    driver_leakage=1.0, seed=3,
+))
+print(diagnose_spatial_spillover(leaky, n_reps=20, cluster_size=3))
+# spatial_buffer=1 uses cluster interiors; bias vs global ATE shrinks
 ```
 
 The diagnostic splits the bias into **control crowding-out** (control match rate in a mixed market vs all-control) and **treated dilution** (treated match rate in a mixed market vs all-treat). Flip the story by setting `extra_drivers_if_treated > 0` with no demand lift: rider A/B never applies a cell-level supply incentive, so it **understates** the launch.
@@ -169,13 +186,15 @@ design = assign_switchback(
     periods=range(28),
     design="balanced",   # or independent, blocked_random
     washout=1,           # drop re-equilibration periods after each switch
+    cluster_size=2,      # neighbors share a sequence (ring order)
+    spatial_buffer=1,    # drop cells that border the opposite arm
     seed=0,
 )
-design.analysis_table  # estimation sample; washout rows are gone
+design.analysis_table  # estimation sample; washout and spatial-buffer rows are gone
 estimate_switchback(design, outcomes)  # joins on analysis_table, not table
 ```
 
-Blocks are `(region, period)`. `design.table` is the full calendar (needed to simulate the world, including re-equilibration). Every estimator goes through `design.analysis_table`. Poison the washout rows and the ATE does not move.
+Blocks are `(region, period)`. Region order is geography: neighbors sit next to each other on a ring. `design.table` is the full calendar (needed to simulate the world, including re-equilibration and driver leakage). Every estimator goes through `design.analysis_table`. Poison the washout or buffer rows and the ATE does not move.
 
 ## Power / sample size
 
