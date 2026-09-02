@@ -32,6 +32,8 @@ Turn the feature on for all of Brooklyn from 2 to 3pm. Off from 3 to 4. On from 
 
 Then count your evidence in city-hours (about 500 of them), not rides (about 41,000).
 
+The catch: if drivers can cruise from a treated region into a neighboring control one, you've recreated the same pizza-slice problem one level up. A discount in Brooklyn at 3pm pulls cars out of Queens, and Queens looks worse even though it was "control." That's why production switchbacks use large, well-separated zones, not adjacent city blocks. This library treats each region as sealed. It does not model that leakage.
+
 ## How I know it works
 
 I built a fake marketplace where I set the true answer myself, then ran each method against it. The tables below have the exact figures. In English, here is what I checked:
