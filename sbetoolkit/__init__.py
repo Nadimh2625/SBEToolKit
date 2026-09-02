@@ -29,7 +29,7 @@ from sbetoolkit.inference import Estimate, block_ate, clustered_ate, estimate_sw
 from sbetoolkit.interference import InterferenceReport, diagnose_interference, diagnose_spatial_spillover
 from sbetoolkit.marketplace import MarketplaceConfig, MarketplaceSimulator, summarize_estimators
 from sbetoolkit.power import PowerResult, switchback_power, switchback_sample_size
-from sbetoolkit.randomization import SwitchbackAssignment, assign_switchback
+from sbetoolkit.randomization import SwitchbackAssignment, assign_switchback, spatial_buffer_cost
 from sbetoolkit.sequential import SequentialMonitor, spending_boundaries
 
 __all__ = [
@@ -53,6 +53,7 @@ __all__ = [
     "empirical_power_check",
     "iid_ate",
     "null_config",
+    "spatial_buffer_cost",
     "spending_boundaries",
     "summarize_estimators",
     "switchback_power",

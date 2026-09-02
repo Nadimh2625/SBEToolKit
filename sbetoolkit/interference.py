@@ -20,7 +20,7 @@ e.g. extra drivers that also serve the control group).
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import numpy as np
 import pandas as pd
@@ -129,35 +129,51 @@ def diagnose_spatial_spillover(
     seed: int = 0,
     cluster_size: int = 3,
 ) -> pd.DataFrame:
-    """Switchback ATE vs truth with and without a spatial buffer.
+    """Sealed zones vs leaky switchback vs leaky + spatial buffer.
 
-    Adjacent treated/control regions leak leftover drivers. Buffering
-    drops the border; clustering adjacent regions onto one sequence
-    leaves an interior that the buffer can keep.
+    Each row's ``truth_ate`` is the global ATE in *that* world (sealed
+    vs leaky). ``keep_frac`` is the share of cells left in
+    ``analysis_table`` after the buffer.
     """
     if sim.config.driver_leakage <= 0:
         raise ValueError("driver_leakage must be > 0 to diagnose spatial spillover")
+
     rng = np.random.default_rng(seed)
-    truth = sim.ground_truth(n_mc=30, seed=seed)["ate"]
+    leaky_truth = sim.ground_truth(n_mc=40, seed=seed)["ate"]
+    sealed = MarketplaceSimulator(replace(sim.config, driver_leakage=0.0))
+    sealed_truth = sealed.ground_truth(n_mc=40, seed=seed)["ate"]
+
+    specs = (
+        ("sealed zones", sealed, 0, sealed_truth),
+        ("leakage, no buffer", sim, 0, leaky_truth),
+        ("leakage, spatial buffer", sim, 1, leaky_truth),
+    )
     rows = []
-    for buffer in (0, 1):
-        ates = []
+    for condition, world, buffer, truth in specs:
+        ates: list[float] = []
+        keeps: list[float] = []
         for _ in range(n_reps):
-            run = sim.run_switchback(
+            run = world.run_switchback(
                 seed=int(rng.integers(0, 1_000_000_000)),
                 cluster_size=cluster_size,
                 spatial_buffer=buffer,
             )
             ates.append(run["ate"])
+            assignment = run["assignment"]
+            keeps.append(len(assignment.analysis_table) / len(assignment.table))
         arr = np.asarray(ates)
         rows.append(
             {
+                "condition": condition,
+                "driver_leakage": float(world.config.driver_leakage),
                 "spatial_buffer": buffer,
                 "cluster_size": cluster_size,
                 "mean_ate": float(arr.mean()),
                 "bias": float(arr.mean() - truth),
                 "rmse": float(np.sqrt(np.mean((arr - truth) ** 2))),
+                "keep_frac": float(np.mean(keeps)),
                 "truth_ate": truth,
+                "n_reps": n_reps,
             }
         )
     return pd.DataFrame(rows)

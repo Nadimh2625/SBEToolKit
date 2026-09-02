@@ -48,6 +48,8 @@ I built a fake marketplace where I set the true answer myself, then ran each met
 
 **The error bars are honest.** Every result comes with a range, like "+2%, give or take 1%." That range is supposed to contain the true answer 95% of the time. The new method: 96%. The old method: 0%. Not "rarely" — never, in 500 tries. Its range was tight and centered on the wrong number every single time.
 
+**Drivers leaking across a border.** When leftover cars can serve the next region, an unbuffered switchback said +0.29; truth was +0.25. Sealed zones and a spatial buffer both landed near truth. The buffer kept 66% of cells at cluster size 3. Cluster size 1 kept 26%.
+
 ## The honest tradeoff
 
 The new method is noisier. Any single experiment can be off by a couple of points in either direction, where the old method lands in the same spot every time. But it lands in the wrong spot every time.
@@ -143,17 +145,13 @@ python -m pytest
 python -m sbetoolkit.cli --mode chart --out docs/naive_vs_switchback.png
 python -m sbetoolkit.cli --mode null --reps 1000 --seed 11 --out docs/type_i_null.png
 python -m sbetoolkit.cli --mode power --reps 500 --seed 13 --out docs/empirical_power.png
+python -m sbetoolkit.cli --mode spillover --reps 200 --seed 3 --out docs/spatial_spillover.csv
 ```
 
 ## Marketplace interference
 
 ```python
-from sbetoolkit import (
-    MarketplaceConfig,
-    MarketplaceSimulator,
-    diagnose_interference,
-    diagnose_spatial_spillover,
-)
+from sbetoolkit import MarketplaceConfig, MarketplaceSimulator, diagnose_interference
 
 sim = MarketplaceSimulator(MarketplaceConfig(
     n_regions=8, n_periods=24,
@@ -164,17 +162,58 @@ sim = MarketplaceSimulator(MarketplaceConfig(
 print(sim.ground_truth())
 print(diagnose_interference(sim).direction)
 # → naive A/B overstates the global effect
+```
+
+The diagnostic splits the bias into **control crowding-out** (control match rate in a mixed market vs all-control) and **treated dilution** (treated match rate in a mixed market vs all-treat). Flip the story by setting `extra_drivers_if_treated > 0` with no demand lift: rider A/B never applies a cell-level supply incentive, so it **understates** the launch.
+
+## Cross-region spillover
+
+Default `driver_leakage=0`. Regions are sealed. That is the market behind every earlier table, so those numbers are unchanged.
+
+Turn leakage on and leftover drivers in a control region serve unmatched demand next door. The treated cell looks better than it would under a full launch; the contrast is the pizza-slice problem one geography over.
+
+I did not run this on the default saturated market. There every cell is already short of drivers, so there is nothing left to leak and all three columns would agree. This check uses slack control (idle cars) and tight treated (leftover demand): 6 regions × 16 periods, cluster size 3, 200 runs.
+
+| Condition | Mean | Bias | Cells kept |
+| --- | ---: | ---: | ---: |
+| Sealed zones (`driver_leakage=0`) | **+0.236** | **−0.006** | **100%** |
+| Leakage, no buffer | **+0.288** | **+0.036** | **100%** |
+| Leakage, spatial buffer | **+0.243** | **−0.009** | **67%** |
+
+Bias is versus that world's global ATE: sealed truth **+0.242**, leaky truth **+0.252**. Unbuffered leakage overstates the launch by about 3.6pp. The buffer lands on the leaky launch effect; it just throws away the border.
+
+Those discarded cells are the price. Cluster size 1 is six independent sequences and a ring of T/C borders: the buffer keeps **26%** of the grid. Size 3 is two sequences and an interior: **66%** kept. Size 2 sits in between at **51%**. Same 96 cells, same one-hop buffer.
+
+| Cluster size | Sequences to randomize | Cells kept after buffer |
+| --- | ---: | ---: |
+| 1 | 6 | **26%** |
+| 2 | 3 | **51%** |
+| 3 | 2 | **66%** |
+
+Bigger clusters mean less contamination and more usable interior, but fewer independent units. It is the same tradeoff as block length, as a keep rate.
+
+```bash
+python -m sbetoolkit.cli --mode spillover --reps 200 --seed 3
+```
+
+```python
+from sbetoolkit import (
+    MarketplaceConfig,
+    MarketplaceSimulator,
+    diagnose_spatial_spillover,
+    spatial_buffer_cost,
+)
 
 leaky = MarketplaceSimulator(MarketplaceConfig(
     n_regions=6, n_periods=16, drivers_per_cell=30,
     p_request_control=0.50, p_request_treat=0.95,
     driver_leakage=1.0, seed=3,
 ))
-print(diagnose_spatial_spillover(leaky, n_reps=20, cluster_size=3))
-# spatial_buffer=1 uses cluster interiors; bias vs global ATE shrinks
+print(diagnose_spatial_spillover(leaky, n_reps=200, seed=3, cluster_size=3))
+print(spatial_buffer_cost(n_regions=6, n_periods=16, cluster_sizes=(1, 2, 3), seed=3))
 ```
 
-The diagnostic splits the bias into **control crowding-out** (control match rate in a mixed market vs all-control) and **treated dilution** (treated match rate in a mixed market vs all-treat). Flip the story by setting `extra_drivers_if_treated > 0` with no demand lift: rider A/B never applies a cell-level supply incentive, so it **understates** the launch.
+Raw rates: `docs/spatial_spillover.csv`, `docs/spatial_spillover_keep.csv`.
 
 ## Switchback randomization
 
